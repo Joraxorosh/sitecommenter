@@ -12,6 +12,15 @@ import { AnnotationLayer, AnnotationToolbar, ANNOTATION_COLORS } from "./annotat
 
 const OPEN_STATUSES = new Set(["new", "in_work"]);
 
+// Держим кнопку в пределах окна: позиция хранится в пикселях и могла быть
+// сохранена на большом мониторе, а открыться — на маленьком.
+function clampFabPosition(x: number, y: number, width = 160, height = 40) {
+  return {
+    x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - width - 8)),
+    y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - height - 8)),
+  };
+}
+
 /**
  * Плавающее окно замечаний.
  *
@@ -46,7 +55,7 @@ export function UiCommentsWidget() {
       if (!raw) return null;
       const parsed = JSON.parse(raw) as { x?: number; y?: number };
       if (typeof parsed?.x === "number" && typeof parsed?.y === "number") {
-        return { x: parsed.x, y: parsed.y };
+        return clampFabPosition(parsed.x, parsed.y);
       }
     } catch {
       // повреждённое значение — используем позицию по умолчанию
@@ -79,12 +88,7 @@ export function UiCommentsWidget() {
   fabPosRef.current = fabPos;
 
   const clampFab = useCallback((x: number, y: number, el?: HTMLElement | null) => {
-    const width = el?.offsetWidth || 120;
-    const height = el?.offsetHeight || 36;
-    return {
-      x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - width - 8)),
-      y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - height - 8)),
-    };
+    return clampFabPosition(x, y, el?.offsetWidth, el?.offsetHeight);
   }, []);
 
   // Перетаскиваем кнопку: она не должна закрывать часть интерфейса.
@@ -137,10 +141,43 @@ export function UiCommentsWidget() {
   };
 
   useEffect(() => {
-    const onResize = () => setFabPos((pos) => (pos ? clampFab(pos.x, pos.y) : pos));
+    if (!enabled || open) return;
+    // Кнопка появляется только после проверки сессии: в момент монтирования её
+    // ещё нет в DOM, поэтому дожимаем позицию, когда она отрисовалась.
+    const frame = window.requestAnimationFrame(() => {
+      const pos = fabPosRef.current;
+      if (!pos) return;
+      const el = document.querySelector<HTMLElement>(".uic-fab");
+      const next = clampFabPosition(pos.x, pos.y, el?.offsetWidth, el?.offsetHeight);
+      if (next.x === pos.x && next.y === pos.y) return;
+      setFabPos(next);
+      try {
+        window.localStorage.setItem(fabKey, JSON.stringify(next));
+      } catch {
+        // приватный режим
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [enabled, open, fabKey]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const pos = fabPosRef.current;
+      if (!pos) return;
+      const el = document.querySelector<HTMLElement>(".uic-fab");
+      const next = clampFabPosition(pos.x, pos.y, el?.offsetWidth, el?.offsetHeight);
+      setFabPos(next);
+      try {
+        window.localStorage.setItem(fabKey, JSON.stringify(next));
+      } catch {
+        // приватный режим
+      }
+    };
+    // Сразу после загрузки: позиция могла быть сохранена на большом мониторе.
+    onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [clampFab]);
+  }, [fabKey]);
 
   const openCount = useMemo(
     () => list.data.filter((item) => OPEN_STATUSES.has(item.status)).length,
