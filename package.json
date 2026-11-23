@@ -20,7 +20,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build:extension": "node extension/build.mjs"
+    "build:extension": "node extension/build.mjs",
+    "demo": "node demo/build.mjs && node demo/serve.mjs"
   },
   "peerDependencies": {
     "react": ">=18"
