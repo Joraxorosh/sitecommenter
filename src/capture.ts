@@ -54,7 +54,7 @@ export async function captureScreen(options: CaptureOptions = {}): Promise<Scree
 
   try {
     syncFormState(root, clone);
-    syncScroll(root, clone);
+    bakeScroll(root, clone);
     clone.querySelectorAll(`[${CAPTURE_SKIP_ATTR}]`).forEach((node) => node.remove());
 
     // Библиотека нужна только при сохранении со снимком: держим её отдельным
@@ -94,16 +94,35 @@ function syncFormState(source: Element, target: Element) {
   }
 }
 
-/** Переносит позиции прокрутки всех контейнеров: деревья копии совпадают. */
-function syncScroll(source: Element, target: Element) {
+/**
+ * Запекает прокрутку контейнеров в копию.
+ *
+ * html-to-image клонирует переданный узел ещё раз и не переносит `scrollTop`,
+ * поэтому в кадре панели оказываются прокрученными в начало. Сдвигаем
+ * содержимое контейнеров трансформом: он попадает в вычисленные стили копии
+ * и переживает повторное клонирование. Липкие и фиксированные элементы не
+ * двигаем — они и так стоят на месте.
+ */
+function bakeScroll(source: Element, target: Element) {
   if (source instanceof HTMLElement && target instanceof HTMLElement) {
-    if (source.scrollTop) target.scrollTop = source.scrollTop;
-    if (source.scrollLeft) target.scrollLeft = source.scrollLeft;
+    const left = source.scrollLeft;
+    const top = source.scrollTop;
+    if (left || top) {
+      for (const child of Array.from(target.children)) {
+        const style = getComputedStyle(child);
+        if (style.position === "sticky" || style.position === "fixed") continue;
+        const existing = (child as HTMLElement).style.transform;
+        (child as HTMLElement).style.transform =
+          `${existing} translate(${-left}px, ${-top}px)`.trim();
+      }
+      target.scrollTop = 0;
+      target.scrollLeft = 0;
+    }
   }
   const from = source.children;
   const to = target.children;
   const limit = Math.min(from.length, to.length);
-  for (let i = 0; i < limit; i += 1) syncScroll(from[i], to[i]);
+  for (let i = 0; i < limit; i += 1) bakeScroll(from[i], to[i]);
 }
 
 function pageBackground(): string {

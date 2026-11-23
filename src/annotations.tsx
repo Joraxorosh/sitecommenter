@@ -126,21 +126,26 @@ export function AnnotationLayer({
         {draft && <Shape item={draft} />}
       </svg>
       {label && (
-        <input
+        <textarea
           autoFocus
           className="uic-anno-input"
           style={{ left: label.at.x, top: label.at.y - 12, color }}
+          rows={Math.min(6, Math.max(1, label.value.split("\n").length))}
           value={label.value}
           placeholder={labels.annotationTools.text}
+          title="Ctrl+Enter — поставить надпись, Esc — отмена"
           onChange={(event) => setLabel({ ...label, value: event.target.value })}
           onBlur={commitLabel}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commitLabel();
-            } else if (event.key === "Escape") {
+            if (event.key === "Escape") {
               event.preventDefault();
               setLabel(null);
+              return;
+            }
+            // Enter переносит строку: надпись может быть многострочной.
+            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+              event.preventDefault();
+              commitLabel();
             }
           }}
         />
@@ -157,6 +162,7 @@ function Shape({ item }: { item: Annotation }) {
     fill: "none",
   };
   if (item.tool === "text") {
+    const lines = item.text.split("\n");
     return (
       <text
         x={item.at.x}
@@ -169,7 +175,11 @@ function Shape({ item }: { item: Annotation }) {
         fontSize={16}
         fontWeight={600}
       >
-        {item.text}
+        {lines.map((line, index) => (
+          <tspan key={index} x={item.at.x} dy={index === 0 ? 0 : 20}>
+            {line || " "}
+          </tspan>
+        ))}
       </text>
     );
   }

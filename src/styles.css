@@ -59,8 +59,13 @@
   font: inherit;
   font-size: 12px;
   font-weight: 500;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
+.uic-fab.is-dragging { cursor: grabbing; }
+/* Пока кнопку тащат, она не должна выделять текст под собой. */
+.uic-fab.is-dragging * { pointer-events: none; }
 .uic-fab:hover { border-color: var(--uic-accent); color: var(--uic-accent-2); }
 .uic-fab:focus-visible { outline: 2px solid var(--uic-accent); outline-offset: 2px; }
 .uic-fab svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; }
@@ -221,6 +226,10 @@
   font: inherit;
   font-size: 16px;
   font-weight: 600;
+  line-height: 20px;
+  white-space: pre;
+  resize: none;
+  overflow: hidden;
   outline: none;
 }
 
@@ -364,6 +373,13 @@
 .uic-card.is-in_work { border-left-color: var(--uic-accent); }
 .uic-card.is-fixed { border-left-color: var(--uic-ok); }
 .uic-card.is-rejected { border-left-color: var(--uic-muted); background: var(--uic-panel-2); }
+/* Карточка, открытая по ссылке #/comments?comment=… */
+.uic-card.is-target { box-shadow: 0 0 0 2px var(--uic-accent); }
+.uic-card-link {
+  border: 0; background: transparent; padding: 0;
+  color: var(--uic-accent-2); font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.uic-card-link:hover { text-decoration: underline; }
 
 .uic-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .uic-author { font-size: 12px; font-weight: 600; }

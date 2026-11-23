@@ -35,6 +35,8 @@ export type UiCommentsConfig = {
   registryHref?: string;
   /** Ссылка на экран из замечания. По умолчанию — сохранённый адрес. */
   screenHref?: (comment: UiComment) => string;
+  /** Ссылка на конкретное замечание для чата/агента. */
+  commentHref?: (comment: UiComment) => string;
   /** Вызывается после успешной отправки — для уведомления хоста. */
   onSent?: (comment: UiComment) => void;
 };
@@ -49,6 +51,7 @@ export type ResolvedUiCommentsConfig = {
   enabled: boolean;
   registryHref: string;
   screenHref: (comment: UiComment) => string;
+  commentHref: (comment: UiComment) => string;
   labels: UiCommentsLabels;
   capture?: () => Promise<ScreenShot | null>;
   onSent?: (comment: UiComment) => void;
@@ -105,6 +108,7 @@ export function UiCommentsProvider({ config, children }: { config: UiCommentsCon
       enabled: config.enabled !== false,
       registryHref: config.registryHref || "#/comments",
       screenHref: config.screenHref || ((comment) => comment.url || comment.route || "#"),
+      commentHref: config.commentHref || ((comment) => `#/comments?comment=${encodeURIComponent(comment.id)}`),
       labels: {
         ...DEFAULT_LABELS,
         ...config.labels,

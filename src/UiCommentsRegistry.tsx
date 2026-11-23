@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { UiComment, UiCommentStatus } from "./types";
 import { STATUS_ORDER, useUiCommentsConfig } from "./config";
 import { useCommentsList } from "./useCommentsList";
@@ -14,6 +14,31 @@ export function UiCommentsRegistry() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("Все");
   const [screen, setScreen] = useState("Все");
+  const [targetId, setTargetId] = useState("");
+
+  // Ссылка вида #/comments?comment=<id> открывает карточку и подсвечивает её.
+  // Слушаем hashchange: переход по ссылке с того же экрана не перемонтирует
+  // компонент, поэтому одного эффекта на монтирование мало.
+  useEffect(() => {
+    const read = () => {
+      const fromHash = new URLSearchParams(window.location.hash.split("?")[1] || "").get("comment");
+      const fromSearch = new URLSearchParams(window.location.search).get("comment");
+      setTargetId((fromHash || fromSearch || "").trim());
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    window.addEventListener("popstate", read);
+    return () => {
+      window.removeEventListener("hashchange", read);
+      window.removeEventListener("popstate", read);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!targetId || library.loading) return;
+    const node = document.querySelector(`[data-comment-id="${CSS.escape(targetId)}"]`);
+    node?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [targetId, library.loading, library.data.length]);
 
   const screens = useMemo(() => {
     const seen = new Map<string, string>();
@@ -119,7 +144,13 @@ export function UiCommentsRegistry() {
       <div className="uic-registry-scroll">
         <div className="uic-cards">
           {rows.map((item) => (
-            <CommentCard key={item.id} item={item} onChanged={library.reload} canEdit={!!user.isAdmin} />
+            <CommentCard
+              key={item.id}
+              item={item}
+              onChanged={library.reload}
+              canEdit={!!user.isAdmin}
+              highlighted={item.id === targetId}
+            />
           ))}
           {rows.length === 0 && (
             <div className="uic-empty">
@@ -166,17 +197,31 @@ function CommentCard({
   item,
   onChanged,
   canEdit,
+  highlighted,
 }: {
   item: UiComment;
   onChanged: () => void;
   canEdit: boolean;
+  highlighted?: boolean;
 }) {
-  const { api, labels, screenHref } = useUiCommentsConfig();
+  const { api, labels, screenHref, commentHref } = useUiCommentsConfig();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [statusDraft, setStatusDraft] = useState<UiCommentStatus>(item.status);
   const [resolution, setResolution] = useState(item.resolution || "");
+  const [copied, setCopied] = useState(false);
   const shot = item.hasScreenshot && api.screenshotUrl ? api.screenshotUrl(item.id) : "";
+
+  const copyLink = async () => {
+    const url = new URL(commentHref(item), window.location.href).href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch {
+      window.prompt("Скопируйте ссылку", url);
+    }
+  };
 
   const save = async () => {
     if (busy || !api.update) return;
@@ -210,7 +255,10 @@ function CommentCard({
   };
 
   return (
-    <article className={`uic-card is-${item.status}`}>
+    <article
+      className={`uic-card is-${item.status}${highlighted ? " is-target" : ""}`}
+      data-comment-id={item.id}
+    >
       <div className="uic-card-head">
         <span className={`uic-status is-${item.status}`}>{labels.statuses[item.status] || item.status}</span>
         <span className="uic-author">{item.author || item.authorUsername || "Пользователь"}</span>
@@ -221,6 +269,14 @@ function CommentCard({
           {item.routeTitle || item.route || "Экран"}
         </a>
         <span className="uic-mono uic-muted uic-small">{item.id}</span>
+        <button
+          type="button"
+          className="uic-card-link"
+          onClick={() => void copyLink()}
+          title="Ссылка на замечание — для чата и агента"
+        >
+          {copied ? "Скопировано" : "Ссылка"}
+        </button>
       </div>
 
       <div className={`uic-card-text${item.text ? "" : " uic-muted"}`}>

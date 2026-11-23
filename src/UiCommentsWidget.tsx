@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Annotation, AnnotationTool, UiComment } from "./types";
 import { useUiCommentsConfig } from "./config";
 import { useCommentsList } from "./useCommentsList";
@@ -33,10 +33,35 @@ export function UiCommentsWidget() {
     onSent,
   } = useUiCommentsConfig();
   const openKey = `${storageKey}.open`;
+  const fabKey = `${storageKey}.fab`;
   const [open, setOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(openKey) === "1";
   });
+  // Позиция перетаскиваемой кнопки: {x, y} в пикселях от левого верхнего угла.
+  const [fabPos, setFabPos] = useState<{ x: number; y: number } | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(fabKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { x?: number; y?: number };
+      if (typeof parsed?.x === "number" && typeof parsed?.y === "number") {
+        return { x: parsed.x, y: parsed.y };
+      }
+    } catch {
+      // повреждённое значение — используем позицию по умолчанию
+    }
+    return null;
+  });
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  const [dragging, setDragging] = useState(false);
   const [text, setText] = useState("");
   const [withShot, setWithShot] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -50,6 +75,72 @@ export function UiCommentsWidget() {
 
   const list = useCommentsList(api, {}, `${storageKey}:list`);
   const { reload } = list;
+  const fabPosRef = useRef(fabPos);
+  fabPosRef.current = fabPos;
+
+  const clampFab = useCallback((x: number, y: number, el?: HTMLElement | null) => {
+    const width = el?.offsetWidth || 120;
+    const height = el?.offsetHeight || 36;
+    return {
+      x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - width - 8)),
+      y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - height - 8)),
+    };
+  }, []);
+
+  // Перетаскиваем кнопку: она не должна закрывать часть интерфейса.
+  const onFabPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    dragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onFabPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 6) return;
+    drag.moved = true;
+    setDragging(true);
+    setFabPos(clampFab(drag.originX + dx, drag.originY + dy, event.currentTarget));
+  };
+  const onFabPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!drag?.moved) return;
+    suppressClick.current = true;
+    const pos = fabPosRef.current;
+    if (pos) {
+      try {
+        window.localStorage.setItem(fabKey, JSON.stringify(pos));
+      } catch {
+        // приватный режим — позиция просто не запомнится
+      }
+    }
+  };
+  const onFabClick = () => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    setOpenState(true);
+  };
+
+  useEffect(() => {
+    const onResize = () => setFabPos((pos) => (pos ? clampFab(pos.x, pos.y) : pos));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [clampFab]);
 
   const openCount = useMemo(
     () => list.data.filter((item) => OPEN_STATUSES.has(item.status)).length,
@@ -193,8 +284,20 @@ export function UiCommentsWidget() {
 
   if (!open) {
     return (
-      <div className="uic-root" data-ui-comment-skip="">
-        <button className="uic-fab" onClick={() => setOpenState(true)} title={labels.title}>
+      <div
+        className="uic-root"
+        data-ui-comment-skip=""
+        style={fabPos ? { left: fabPos.x, top: fabPos.y, right: "auto", bottom: "auto" } : undefined}
+      >
+        <button
+          className={`uic-fab${dragging ? " is-dragging" : ""}`}
+          onPointerDown={onFabPointerDown}
+          onPointerMove={onFabPointerMove}
+          onPointerUp={onFabPointerUp}
+          onPointerCancel={onFabPointerUp}
+          onClick={onFabClick}
+          title="Перетащите, чтобы не перекрывать экран; нажмите, чтобы оставить замечание"
+        >
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
             <path d="M5 6h6M5 8.2h4" />
